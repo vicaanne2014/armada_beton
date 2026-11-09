@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
+// Aplikasi ini sepenuhnya dinamis dan per-user (RLS Supabase), jadi Cache Components
+// sengaja tidak diaktifkan. Data tidak boleh di-cache lintas user.
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  serverExternalPackages: ["@react-pdf/renderer", "exceljs"],
   turbopack: {
     rules: {
       "*.css": {
