@@ -31,25 +31,59 @@ cp .env.example .env.local          # isi URL, publishable key, service role key
 
 1. **Terapkan migrasi** di `supabase/migrations/` ke project Supabase, **berurutan** (4 file):
    `supabase link --project-ref <ref>` lalu `supabase db push`, atau tempel isinya ke SQL Editor satu per satu.
-2. **Seed data demo dan user**: `npm run seed` (membuat departemen, gudang, penempatan, satuan, item, dan 9 user demo).
+2. **Seed**: `npm run seed` untuk master data + 14 user demo, atau **`npm run seed:demo`** untuk sekaligus mengisi
+   skenario transaksi satu bulan operasi (lihat bagian Seeder). Keduanya membutuhkan `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` di `.env.local`.
 3. `npm run dev`, buka http://localhost:3000, login memakai username (mis. `admin`) dan `SEED_PASSWORD`.
 
 Ganti password semua user demo sebelum dipakai sungguhan. Login memakai **username**; Supabase Auth menyimpannya sebagai
 email sintetis `<username>@wms.local`.
 
-### User demo
+## Seeder
 
-| Username | Peran |
-|---|---|
-| `admin` | Admin Sistem |
-| `staff_material` | Staff Gudang Material (gudang WH-M) |
-| `staff_bj` | Staff Gudang Barang Jadi (gudang WH-F) |
-| `staff_prod` | Staff Departemen Produksi |
-| `kadep_prod` | Kepala Departemen Produksi |
-| `kadep_gudang` | Kepala Departemen Gudang |
-| `kagud_material` | Kepala Gudang Material |
-| `kagud_bj` | Kepala Gudang Barang Jadi |
-| `manajemen` | Manajemen (baca saja) |
+`npm run seed` idempotent (upsert berdasarkan kode; aman diulang). `npm run seed:demo` menambahkan transaksi **sekali saja**:
+bila sudah ada dokumen, skenario dilewati, karena ledger tidak bisa direset dari aplikasi. Untuk mengulang dari nol, buat
+project Supabase baru (atau kosongkan skema sebagai superuser di SQL Editor).
+
+Transaksi demo tidak ditulis langsung ke tabel. Seeder login sebagai tiap user dan memanggil RPC yang sama dengan aplikasi,
+sehingga approval, pemisahan tugas, penomoran, ledger, dan audit terbentuk secara sah.
+
+**Master data (batching plant precast):** 3 gudang (Material Utama, Agregat Curah, Barang Jadi) dengan 22 penempatan berpohon;
+20 item (12 material: semen, pasir, batu split, fly ash, aditif, besi, kawat, minyak bekisting, spacer; 8 barang jadi: U-ditch, buis,
+paving, kansteen); satuan material dan barang jadi terpisah; 4 supplier dan 5 customer (bertanda "(demo)"); 3 departemen.
+
+**Pengguna demo (14)**, password = `SEED_PASSWORD`:
+
+| Username | Peran | Catatan |
+|---|---|---|
+| `admin` | Admin Sistem | master, user, alur approval, audit |
+| `manajemen` | Manajemen | baca saja, semua gudang |
+| `staff_material` | Staff Gudang Material | gudang WH-M |
+| `staff_agregat` | Staff Gudang Material | gudang WH-M2 |
+| `staff_bj` | Staff Gudang Barang Jadi | gudang WH-F |
+| `staff_prod`, `staff_prod2` | Staff Departemen Produksi | tanpa akses gudang |
+| `kadep_prod` | Kepala Departemen Produksi | menyetujui dokumen Produksi |
+| `kadep_gudang` | Kepala Departemen Gudang | menyetujui dokumen staff gudang |
+| `wakil_kadep_gudang` | Deputi Kepala Dept. Gudang | pengganti `kadep_gudang` |
+| `kagud_material` | Kepala Gudang | WH-M |
+| `wakil_kagud_material` | Deputi Kepala Gudang | pengganti untuk WH-M |
+| `kagud_agregat` | Kepala Gudang | WH-M2 |
+| `kagud_bj` | Kepala Gudang | WH-F |
+
+**Skenario demo (32 dokumen)** dengan sebaran status: 17 tervalidasi, 4 menunggu validasi, 4 menunggu approval, 2 dikembalikan,
+2 ditolak, 3 draft. Yang bisa ditelusuri:
+
+- **Stok awal** dari 6 penerimaan material (surat jalan + referensi PO pembelian); satu divalidasi oleh **deputi**.
+- **PO-PRD-2611-001** (U-Ditch 60, target 200): 2 permintaan material dari 2 gudang (satu material dipecah dari 2 penempatan),
+  penerimaan barang jadi bertahap 80 + 70 (50 lagi menunggu approval), 1 pengiriman.
+- **PO-PRD-2611-002** (Buis 80, target 150): target tercapai; 3 pengiriman, satu **dibalik** (barang dikembalikan customer);
+  penerimaan kelebihan 10 pcs memicu peringatan melebihi target.
+- **Surat jalan keluar** SJK/…/0001–0003 sudah terbit; satu pengiriman menunggu validasi, satu draft.
+- **Opname** Bin Pasir 1 selesai (selisih −2 m³ diposting); opname **Blok 1C sedang berjalan** dan mengunci penempatan itu:
+  penerimaan 10 buis ke Blok 1C yang menunggu approval akan ditolak validasinya sampai opname selesai.
+- **Inbox**: tiap kepala dan deputi punya 2 dokumen menunggu; dokumen dikembalikan/ditolak membawa alasan.
+- **Peringatan stok**: permintaan 5.000 sak semen memicu peringatan saat submit; semen, aditif SP, dan pasir di bawah minimum.
+- **Lampiran** foto surat jalan pada 1 dokumen dikembalikan dan 1 draft.
 
 ### Mencoba alur lengkap
 
@@ -63,7 +97,7 @@ email sintetis `<username>@wms.local`.
 ## Pengujian
 
 ```bash
-npm test            # 55 test: aturan bisnis di Postgres (PGlite) + pemeriksaan berkas, tanpa Supabase/Docker
+npm test            # 72 test: aturan bisnis + skenario seeder di Postgres (PGlite) + pemeriksaan berkas, tanpa Supabase/Docker
 npm run typecheck
 npm run build
 ```
@@ -127,4 +161,4 @@ Email/WhatsApp belum ada (dirancang sebagai konsumen tabel `notification`).
 - Sentry belum dipasang.
 - Konkurensi dua koneksi belum diuji otomatis (PGlite satu koneksi); penguncian `FOR UPDATE` didesain untuk itu.
 - **UI belum diuji end-to-end terhadap Supabase sungguhan.** Yang teruji: logika database (55 test), typecheck, lint, build, dan
-  proteksi login di runtime. Upload/unduh lampiran dan Storage belum pernah dijalankan.
+  proteksi login di runtime. Seeder terbukti di Postgres lokal; adapter Supabase-nya belum dijalankan. Upload/unduh lampiran dan Storage belum pernah dijalankan.
